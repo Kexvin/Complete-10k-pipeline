@@ -1,8 +1,1 @@
-__pycache__/
-*.pyc
-.venv/
-.env
-Data/Logs/
-Knowledge/chroma/
-Knowledge/pinecone/
-Data/Tertiary/
+Data/Primary/kaggle_facts/*.csv
