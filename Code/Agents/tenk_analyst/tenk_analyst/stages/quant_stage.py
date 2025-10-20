@@ -10,5 +10,5 @@ class QuantStage(Stage[RoutedChunksArtifact, QuantResultsArtifact]):
 
     def run(self, inp: RoutedChunksArtifact, **kwargs):
         z_chunks = [rc.chunk for rc in inp.routed if rc.route == "quantitative"]
-        results = self.agent.run(z_chunks)
+        results = self.agent.run(z_chunks, company_cik=inp.company_cik)
         return QuantResultsArtifact(company_cik=inp.company_cik, accession=inp.accession, results=results, sources=inp.sources)

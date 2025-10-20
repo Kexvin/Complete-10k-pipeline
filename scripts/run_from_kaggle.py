@@ -22,9 +22,11 @@ from Code.Agents.tenk_analyst.tenk_analyst.agents.qualitative import Qualitative
 from Code.Agents.tenk_analyst.tenk_analyst.agents.quantitative import QuantitativeAgent
 from Code.Assets.Tools.nlp.finbert import FinBert
 from Code.Assets.Tools.rag.pinecone_client import RAG
+from dotenv import load_dotenv
+load_dotenv()
 
 
-def process_company_facts(csv_path: str, limit: int = 1):
+def process_company_facts(csv_path: str, limit: int = 1, pinecone_collection: str = "knowledgepinecone"):
     """Process companies from the Kaggle dataset."""
     print(f"Loading company data from: {csv_path}")
     
@@ -49,7 +51,7 @@ def process_company_facts(csv_path: str, limit: int = 1):
         try:
             # Set up pipeline components
             base = Pipeline([IdentifyStage(), FetchStage(), ChunkStage(), RouteStage(ControllerAgent())])
-            rag_client = RAG(collection="knowledgepinecone")
+            rag_client = RAG(collection=pinecone_collection)
             qual = Pipeline([QualStage(QualitativeAgent(FinBert(), rag_client))])
             quant = Pipeline([QuantStage(QuantitativeAgent())])
             
@@ -81,14 +83,18 @@ def process_company_facts(csv_path: str, limit: int = 1):
                 "cik": cik,
                 "accession": final.accession,
                 "key_tone": final.report.key_tone if final.report else "N/A",
-                "risks": final.report.top_risks if final.report else [],
-                "financials": final.report.financial_highlights if final.report else [],
+                "tone_explanation": final.report.tone_explanation if final.report else "",
+                "risks": final.report.risks if final.report else [],
+                "financials": final.report.financials if final.report else [],
+                "llm_explanation": final.report.llm_explanation if final.report else "",
+                "similar_companies": final.report.similar_companies if final.report else [],
                 "qualitative_analysis": [
                     {
                         "chunk_id": q.chunk_id,
                         "tone": q.tone,
-                        "signals": q.signals
-                    } for q in final.report.qualitative
+                        "signals": [{"label": s.label, "evidence": s.evidence, "context": s.context} for s in q.signals],
+                        "similar_companies": [{"name": sc.company, "tone": sc.tone, "similarity": sc.similarity} for sc in q.similar_companies]
+                    } for q in final.report.qualitative_analysis
                 ] if final.report else [],
                 "sources": [{
                     "type": s.type,
@@ -112,13 +118,13 @@ def process_company_facts(csv_path: str, limit: int = 1):
             print(f"CIK: {cik}")
             if final.report.key_tone:
                 print(f"Key Tone: {final.report.key_tone}")
-            if final.report.top_risks:
+            if final.report.risks:
                 print("\nTop Risks:")
-                for risk in final.report.top_risks:
+                for risk in final.report.risks:
                     print(f"- {risk}")
-            if final.report.financial_highlights:
+            if final.report.financials:
                 print("\nFinancial Highlights:")
-                for highlight in final.report.financial_highlights:
+                for highlight in final.report.financials:
                     print(f"- {highlight}")
             
         except Exception as e:
@@ -134,6 +140,7 @@ if __name__ == "__main__":
                        help="Path to Kaggle companyfacts.csv")
     parser.add_argument("--limit", type=int, default=1,
                        help="Maximum number of companies to process")
+    parser.add_argument("--pinecone-collection", type=str, default="knowledgepinecone", help="Pinecone collection name for RAG client")
     args = parser.parse_args()
 
     # Verify environment variables
@@ -143,4 +150,4 @@ if __name__ == "__main__":
         raise ValueError("PINECONE_API_KEY environment variable must be set")
 
     # Process companies
-    process_company_facts(args.csv, args.limit)
+    process_company_facts(args.csv, args.limit, args.pinecone_collection)

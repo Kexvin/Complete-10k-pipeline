@@ -10,14 +10,15 @@ from typing import List, Dict
 class LLMClient:
     def __init__(self, model: str = "gpt-3.5-turbo"):
         self.model = model
+        self._client = None
         try:
-            import openai
-            self._openai = openai
-            self._openai.api_key = os.getenv("Osk-proj-PkoTRDHvJVOlt7hyS3T61BbhMvHWr9f-UYx-68R2mJA9YMH_UMJV0IpaaRpOQLewzgqkuAJxAST3BlbkFJizII7r-7gxb-4f2WCvWzq6TkvcAP5W0V6wJo_7Rvo9_qzUvzFL7tTVvyB7rJ89XUBE08OCt5EA")
-            if not self._openai.api_key:
-                self._openai = None
-        except Exception:
-            self._openai = None
+            from openai import OpenAI
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                self._client = OpenAI(api_key=api_key)
+        except Exception as e:
+            print(f"Warning: Failed to initialize OpenAI client: {e}")
+            self._client = None
 
     def explain_qualitative(self, company_name: str, qual_results: List[Dict], similar_companies: List[Dict]) -> str:
         """Return a natural-language explanation of qualitative signals and how conclusions were reached.
@@ -26,18 +27,21 @@ class LLMClient:
         similar_companies: list of dicts with name/tone/similarity (may overlap with qual_results)
         """
         # If OpenAI available, call the API
-        if self._openai:
+        if self._client:
             prompt = self._build_prompt(company_name, qual_results, similar_companies)
             try:
-                resp = self._openai.ChatCompletion.create(
+                resp = self._client.chat.completions.create(
                     model=self.model,
-                    messages=[{"role": "system", "content": "You are an analyst assistant."},
-                              {"role": "user", "content": prompt}],
+                    messages=[
+                        {"role": "system", "content": "You are an analyst assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
                     max_tokens=512,
                     temperature=0.2
                 )
                 return resp.choices[0].message.content.strip()
             except Exception as e:
+                print(f"Warning: OpenAI API call failed: {e}")
                 # fallback to deterministic
                 return self._deterministic_explanation(company_name, qual_results, similar_companies)
 
