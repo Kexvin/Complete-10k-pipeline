@@ -4,4 +4,5 @@ __pycache__/
 .env
 Data/Logs/
 Knowledge/chroma/
+Knowledge/pinecone/
 Data/Tertiary/

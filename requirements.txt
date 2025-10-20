@@ -1,0 +1,12 @@
+
+# Core minimal dependencies (install these first)
+pydantic>=1.10.0
+transformers>=4.0.0
+requests>=2.25.0
+# numpy: pin to a pre-built release compatible with many platforms; install separately if build fails
+numpy>=1.26.4
+
+# Optional / heavy packages (install manually per platform):
+# pinecone-client (RAG) and torch (PyTorch) are optional and may need platform-specific wheels:
+#   python -m pip install pinecone-client
+#   python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
