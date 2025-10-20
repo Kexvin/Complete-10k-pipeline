@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}\\Code",
+        "${workspaceFolder}\\Knowledge"
+    ],
+    "python.pythonPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}

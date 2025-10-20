@@ -9,5 +9,7 @@ class RouteStage(Stage[ChunksArtifact, RoutedChunksArtifact]):
         self.controller = controller
 
     def run(self, inp: ChunksArtifact, **kwargs) -> RoutedChunksArtifact:
-        routed = self.controller.route(inp.chunks)
+        # Allow routing to consider filing metadata (e.g., filing_type)
+        filing_type = getattr(inp, "filing_type", None)
+        routed = self.controller.route(inp.chunks, filing_type=filing_type)
         return RoutedChunksArtifact(company_cik=inp.company_cik, accession=inp.accession, routed=routed, sources=inp.sources)

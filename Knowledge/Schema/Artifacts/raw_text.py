@@ -11,5 +11,6 @@ class RawTextArtifact(Artifact):
     company_cik: str = ""
     accession: str = ""
     filing_period: Optional[str] = None
+    filing_type: Optional[str] = None
     text: str = ""
     sources: List[DataSource] = None

@@ -11,5 +11,6 @@ class ChunksArtifact(Artifact):
 
     company_cik: str = ""
     accession: str = ""
+    filing_type: str = ""
     chunks: List[Chunk] = None
     sources: List[DataSource] = None
