@@ -1,357 +1,195 @@
-🧱 Stages & Artifacts
+# 10-K Analyst
+
+A multi-stage pipeline for analyzing SEC 10-K filings using NLP, financial analysis, and RAG (Retrieval-Augmented Generation) capabilities.
+
+## Overview
+
+This system automatically processes 10-K filings through seven stages:
+1. **Identify** - Locate the most recent 10-K filing
+2. **Fetch** - Download and clean the filing text
+3. **Chunk** - Extract and segment key sections
+4. **Route** - Classify chunks for appropriate analysis
+5. **Qualitative** - Perform sentiment and risk analysis
+6. **Quantitative** - Extract and compute financial metrics
+7. **Summarize** - Generate comprehensive reports with RAG indexing
+
+## Features
+
+- **Automated SEC Filing Retrieval** - Fetches the latest 10-K filings via SEC EDGAR API
+- **Financial Analysis** - Extracts key metrics and computes derived ratios
+- **Sentiment Analysis** - Uses FinBERT for tone classification
+- **RAG Integration** - Semantic search across filings using Pinecone
+- **Comprehensive Reports** - JSON-formatted summaries with qualitative and quantitative insights
+
+## Pipeline Stages
+
+### Stage 1 – Identify
+- **File:** `stages/identify_stage.py`
+- **Input:** `RawTextArtifact` with `company_cik`
+- **Process:** Fetches submission list, filters for 10-K forms, selects most recent filing
+- **Output:** `RawTextArtifact` with `accession` number
+
+### Stage 2 – Fetch
+- **File:** `stages/fetch_stage.py`
+- **Input:** `RawTextArtifact` with `company_cik` and `accession`
+- **Process:** 
+  - Downloads and cleans 10-K HTML
+  - Optionally indexes full text into Pinecone (`rag_index=True`)
+- **Output:** `RawTextArtifact` with complete filing text
+
+### Stage 3 – Chunk
+- **File:** `stages/chunk_stage.py`
+- **Input:** `RawTextArtifact` (full text)
+- **Process:**
+  - Strips HTML and boilerplate
+  - Extracts key sections (Risk Factors, Market Risk, Financial Statements)
+  - Segments into paragraph-level chunks with UUIDs
+- **Output:** `ChunksArtifact`
+
+### Stage 4 – Route
+- **File:** `stages/route_stage.py`
+- **Input:** `ChunksArtifact`
+- **Process:** Assigns routing labels based on section type
+  - Risk Factors → qualitative-heavy
+  - Market Risk → qualitative + quant context
+  - Financial Statements → quant context
+- **Output:** `RoutedChunksArtifact`
+
+### Stage 5 – Qualitative
+- **Files:** `stages/qual_stage.py`, `agents/qualitative.py`, `models/qualitative.py`
+- **Input:** `RoutedChunksArtifact`
+- **Process:**
+  - **Tone Analysis:** Uses FinBERT for sentiment classification (positive, neutral, negative)
+  - **RAG Retrieval:** Embeds chunk text and queries Pinecone for similar filings
+  - **Signal Extraction:** Builds `QualSignal` objects with tone evidence and risk phrases
+- **Output:** `QualResultsArtifact`
+
+### Stage 6 – Quantitative
+- **Files:** `stages/quant_stage.py`, `agents/quantitative.py`, `models/quantitative.py`
+- **Input:** `RoutedChunksArtifact` and CIK
+- **Process:**
+  - Pulls numeric data from SEC CompanyFacts (Revenue, Net Income, Operating Cash Flow, etc.)
+  - Computes derived metrics:
+    - Free Cash Flow = OCF - CapEx
+    - Debt Ratio = Liabilities / Assets
+    - Net Margin = Net Income / Revenue
+- **Output:** `QuantResultsArtifact`
+
+### Stage 7 – Summarize
+- **Files:** `stages/summarize_stage.py`, `agents/summarizer.py`, `models/summary.py`
+- **Input:** `QualResultsArtifact` and `QuantResultsArtifact`
+- **Process:**
+  - Aggregates qualitative signals (key tone, risk bullets)
+  - Formats quantitative metrics
+  - Generates LLM explanation (optional, requires OpenAI API key)
+  - Indexes rich text summary into Pinecone
+  - Writes JSON report to `Data/Outputs/reports/{CIK}_{timestamp}_report.txt`
+- **Output:** `SummaryArtifact`
+
+## RAG System (Pinecone)
+
+**Core Files:**
+- Client: `Code/Assets/Tools/rag/pinecone_client.py`
+- Agent wrapper: `Code/Agents/tenk_analyst/tenk_analyst/agents/rag_agent.py`
+
+### What Gets Indexed?
+- Full filing text (optional, in Fetch stage)
+- Condensed summary text (in Summarize stage)
+
+Each indexed item includes:
+- **ID:** `{CIK}_{accession}`
+- **Text:** Long-form content (filing or summary)
+- **Metadata:** Company CIK, accession, tone, financial figures
 
-Artifacts live in Knowledge/Schema/Artifacts/ and are imported into stages & agents.
+### What Gets Retrieved?
+During qualitative analysis, chunk text is embedded and sent to Pinecone, returning top-k semantically similar vectors for:
+- Peer comparison
+- Sector context
+- Similar filing identification
 
-Stage	Input Artifact	Output Artifact	File (Stage)
-Identify	RawTextArtifact	RawTextArtifact	stages/identify_stage.py
-Fetch	RawTextArtifact	RawTextArtifact	stages/fetch_stage.py
-Chunk	RawTextArtifact	ChunksArtifact	stages/chunk_stage.py
-Route	ChunksArtifact	RoutedChunksArtifact	stages/route_stage.py
-Qualitative	RoutedChunksArtifact	QualResultsArtifact	stages/qual_stage.py + agents/qualitative.py
-Quantitative	RoutedChunksArtifact	QuantResultsArtifact	stages/quant_stage.py + agents/quantitative.py
-Summarize	Qual + Quant artifacts	SummaryArtifact	stages/summarize_stage.py + agents/summarizer.py
-Stage 1 – Identify
+## Data Sources
 
-File: Code/Agents/tenk_analyst/tenk_analyst/stages/identify_stage.py
-Input: RawTextArtifact with company_cik set, no text yet.
-Process:
+- **SEC EDGAR** - Submissions and 10-K filing content (`sec_client.py`)
+- **SEC CompanyFacts** - XBRL numeric facts for quantitative KPIs (`sec_facts_client.py`)
+- **FinBERT** - Financial sentiment model for chunk-level tone analysis
+- **Pinecone** - Vector database for RAG capabilities
+- **OpenAI** (Optional) - Natural-language explanations in Summarize stage
 
-Uses sec_client (Code/Assets/Tools/io/sec_client.py) to:
+## Setup & Prerequisites
 
-Fetch the list of submissions for that CIK
+### 1. Create & Activate Virtual Environment
 
-Filter for 10-K form type
-
-Select the most recent 10-K accession
-
-Output: RawTextArtifact with accession filled in.
-
-Stage 2 – Fetch
-
-File: Code/Agents/tenk_analyst/tenk_analyst/stages/fetch_stage.py
-Input: RawTextArtifact with company_cik & accession.
-Process:
-
-Uses sec_client.fetch_10k_text() to download & clean the primary 10-K HTML.
-
-Adds SEC EDGAR as a source via datasources.sec_edgar_api_source.
-
-Optionally indexes the full cleaned text into Pinecone when rag_index=True:
-
-Uses Code/Assets/Tools/rag/pinecone_client.RAG.
-
-Output: RawTextArtifact with:
-
-filing_type="10-K"
-
-text containing full cleaned filing text
-
-sources including SEC EDGAR (+ any configured notes)
-
-Stage 3 – Chunk
-
-File: Code/Agents/tenk_analyst/tenk_analyst/stages/chunk_stage.py
-Input: RawTextArtifact (full text).
-Process:
-
-Uses Code/Assets/Tools/nlp/chunker.py to:
-
-Strip HTML and boilerplate.
-
-Detect and extract:
-
-item_1a_risk_factors
-
-item_7a_market_risk
-
-item_8_financial_statements
-
-Slice each section into chunks (paragraph-ish).
-
-Annotate each chunk with:
-
-chunk_id (UUID)
-
-Section label
-
-Raw & cleaned text
-
-Output: ChunksArtifact (chunks.py).
-
-Stage 4 – Route
-
-File: Code/Agents/tenk_analyst/tenk_analyst/stages/route_stage.py
-Input: ChunksArtifact.
-Process:
-
-Assigns routing labels based on section:
-
-Risk Factors → qualitative-heavy
-
-Market Risk → qualitative + quant context
-
-Financial Statements → quant context / summary usage
-
-Packages routed chunks into a single artifact.
-
-Output: RoutedChunksArtifact (routed.py).
-
-Stage 5 – Qualitative
-
-Files:
-
-Stage: stages/qual_stage.py
-
-Agent: agents/qualitative.py
-
-Models: models/qualitative.py
-
-Input: RoutedChunksArtifact.
-Process (per chunk routed to qual path):
-
-Tone analysis (FinBERT)
-
-Uses Code/Assets/Tools/nlp/finbert.FinBert (heavy=True)
-
-Classifies tone: positive, neutral, or negative
-
-Produces a QualResult with tone & confidence.
-
-Optional RAG retrieval
-
-Uses RagAgent (agents/rag_agent.py) wrapping RAG client.
-
-Embeds chunk text and queries Pinecone (knowledgepinecone by default).
-
-Returns top-k similar chunks or filings with:
-
-id, score, text, metadata.
-
-Signal extraction
-
-Builds QualSignal objects encoding:
-
-Tone evidence
-
-Risk phrases
-
-Any RAG-derived comparative context
-
-Output: QualResultsArtifact (qual_results.py).
-
-Stage 6 – Quantitative
-
-Files:
-
-Stage: stages/quant_stage.py
-
-Agent: agents/quantitative.py
-
-Models: models/quantitative.py
-
-Finance helpers: Code/Assets/Tools/finance/ratios.py
-
-SEC facts: Code/Assets/Tools/io/sec_facts_client.py
-
-Input: RoutedChunksArtifact (for context) + CIK.
-Process:
-
-Pulls numeric data from SEC companyfacts:
-
-Revenue
-
-Net Income
-
-Operating Cash Flow
-
-Capital Expenditures
-
-Total Assets
-
-Total Liabilities
-
-Computes derived metrics with ratios.py, e.g.:
-
-Free Cash Flow = OCF – CapEx
-
-Debt Ratio = Liabilities / Assets
-
-Net Margin = Net Income / Revenue
-
-Output: QuantResultsArtifact (quant_results.py).
-
-Stage 7 – Summarize
-
-Files:
-
-Stage: stages/summarize_stage.py
-
-Agent: agents/summarizer.py
-
-Models: models/summary.py
-
-Input:
-
-QualResultsArtifact
-
-QuantResultsArtifact
-
-Process:
-
-Aggregates qualitative signals:
-
-Derives key_tone (majority tone).
-
-Collects risk bullets with evidence snippets.
-
-Formats quantitative metrics:
-
-Human-readable financials structure.
-
-Generates an LLM explanation (optional):
-
-Uses Code/Assets/Tools/llm/openai_client.py if OPENAI_API_KEY is set.
-
-Otherwise falls back to deterministic templated explanation.
-
-Builds a SummaryReport model and wraps into SummaryArtifact.
-
-Serializes to JSON and writes to:
-
-Data/Outputs/reports/{CIK}_{timestamp}_report.txt
-
-
-Indexes a rich text summary into Pinecone via RAG:
-
-ID like {CIK}_{accession}
-
-Text includes company name, tone, explanation, financial highlights, and sample qualitative lines.
-
-Output: SummaryArtifact (summary.py).
-
-📚 RAG System (Pinecone)
-
-Core client: Code/Assets/Tools/rag/pinecone_client.py
-Agent wrapper: Code/Agents/tenk_analyst/tenk_analyst/agents/rag_agent.py
-
-What gets indexed?
-
-Full filing text (optional) in Fetch Stage.
-
-Condensed summary text in Summarize Stage.
-
-Each indexed item has:
-
-id: e.g., "0000077476_0000077476-25-000007"
-
-text: long-form textual content (filing or summary).
-
-metadata: company CIK, accession, tone, financial figures, etc.
-
-What gets retrieved?
-
-During qualitative analysis:
-
-A chunk’s text is embedded and sent to Pinecone.
-
-RAG returns top-k semantically similar vectors:
-
-Exposing similar filings / similar sections.
-
-The qualitative agent uses this for:
-
-Peer comparison
-
-Sector context
-
-“Similar concerns noted by …” style commentary (if you choose to add it in the summarizer).
-
-🔐 Data Sources
-
-SEC EDGAR Submissions & Filings
-
-10-K list and primary HTML content (sec_client.py).
-
-SEC CompanyFacts
-
-XBRL numeric facts for quantitative KPIs (sec_facts_client.py).
-
-FinBERT
-
-Financial sentiment model for chunk-level tone.
-
-Pinecone
-
-Vector DB for RAG.
-
-OpenAI (Optional)
-
-Used only for natural-language explanations in the Summarize stage.
-
-⚙️ Setup & Prerequisites
-1. Create & Activate Virtual Env
+```bash
 python -m venv .venv
 source .venv/bin/activate        # macOS / Linux
 # .venv\Scripts\activate         # Windows (PowerShell / cmd)
+```
 
-2. Install Dependencies
+### 2. Install Dependencies
+
+```bash
 pip install --upgrade pip
 pip install -r requirements.txt
+```
 
-3. Environment Variables (.env)
+### 3. Environment Variables
 
-Create .env in the project root (same level as README.md):
+Create a `.env` file in the project root:
 
+```bash
 SEC_USER_AGENT="Your Name your.email@example.com"
 PINECONE_API_KEY=your-pinecone-api-key
 PINECONE_INDEX=knowledgepinecone
 
 # Optional for LLM explanations
 OPENAI_API_KEY=sk-...
+```
 
+**Note:** The SEC requires a proper User-Agent string.
 
-The SEC requires a proper User-Agent string.
+## Running the Pipeline
 
-🚀 Running the Pipeline
+**Main entry script:** `Workflow/10K_Analysis/run_from_sec.py`
 
-Main entry script: Workflow/10K_Analysis/run_from_sec.py
+Set `PYTHONPATH` to the repo root so imports work correctly.
 
-Make sure to set PYTHONPATH to the repo root so imports work.
+### Single CIK
 
-Single CIK
+```bash
 PYTHONPATH="$PWD" python3 Workflow/10K_Analysis/run_from_sec.py \
   --cik 0000077476 \
   --limit 1 \
   --pinecone-collection knowledgepinecone
+```
 
-Multiple CIKs
+### Multiple CIKs
+
+```bash
 PYTHONPATH="$PWD" python3 Workflow/10K_Analysis/run_from_sec.py \
   --cik 0000077476 \
   --cik 0000091767 \
   --limit 2 \
   --pinecone-collection knowledgepinecone
+```
 
+**Options:**
+- `--cik` can be passed multiple times
+- `--limit` truncates the list (e.g., pass 20 CIKs but only process the first 5)
 
---cik can be passed multiple times.
+### Wipe Pinecone Index
 
---limit truncates the list (e.g. you can pass 20 CIKs but only process the first 5).
-
-Wipe Pinecone Index
-
-File: Workflow/10K_Analysis/wipe_pinecone.py
-
+```bash
 PYTHONPATH="$PWD" python3 Workflow/10K_Analysis/wipe_pinecone.py \
   --pinecone-collection knowledgepinecone
+```
 
-📤 Output Reports
+## Output Reports
 
-Reports are saved under:
+Reports are saved to: `Data/Outputs/reports/{CIK}_{timestamp}_report.txt`
 
-Data/Outputs/reports/{CIK}_{timestamp}_report.txt
+### Sample Report Structure
 
-
-Each file contains pretty-printed JSON, e.g.:
-
+```json
 {
   "company_name": "PEPSICO INC",
   "cik": "0000077476",
@@ -397,11 +235,11 @@ Each file contains pretty-printed JSON, e.g.:
   "sic": 2080,
   "industry": "Beverages"
 }
+```
 
-📁 Repository Structure
+## Repository Structure
 
-Matches your current tree:
-
+```
 ├── Code
 │   ├── Agents
 │   │   ├── agent_registry.json
@@ -481,37 +319,35 @@ Matches your current tree:
     │   ├── run_from_sec.py
     │   └── wipe_pinecone.py
     └── workflow_diagram.md
+```
 
-🛠 Troubleshooting (Quick)
+## Troubleshooting
 
-ModuleNotFoundError for Code.*:
-Ensure you set PYTHONPATH="$PWD" when running.
+### ModuleNotFoundError for Code.*
+Ensure you set `PYTHONPATH="$PWD"` when running scripts.
 
-SEC rate limit issues:
-Reduce --limit or add sleeps in sec_client if you start hitting rate limits.
+### SEC Rate Limit Issues
+Reduce `--limit` or add delays in `sec_client.py` if encountering rate limits.
 
-Pinecone errors:
+### Pinecone Errors
+- Verify `PINECONE_API_KEY` and `PINECONE_INDEX` are set correctly
+- Ensure the index exists and dimensions match your embedding model
 
-Check PINECONE_API_KEY and PINECONE_INDEX.
+### No Financials in Output
+- SEC CompanyFacts may be missing tags for that CIK
+- Check `sec_facts_client` logs for missing facts
 
-Make sure the index exists and dimensions match your embedding model.
+## Contributing / Extending
 
-No financials in output:
+### Adding New Features
+- **New derived ratios:** Extend `Code/Assets/Tools/finance/ratios.py`
+- **Enhanced qualitative signals:** Modify `agents/qualitative.py`
+- **Custom summary formatting:** Update `agents/summarizer.py`
+- **Additional stages:** Compose custom pipelines using `core/pipeline.py`
 
-SEC companyfacts may be missing some tags for that CIK.
+### Example: Custom Pipeline
 
-Inspect sec_facts_client logs for missing facts.
-
-🤝 Contributing / Extending
-
-Add new derived ratios to Code/Assets/Tools/finance/ratios.py.
-
-Extend qualitative signals in agents/qualitative.py.
-
-Enhance summary formatting in agents/summarizer.py.
-
-Add new stages by composing them in custom Pipeline instances via core/pipeline.py.
-
+```python
 from Code.Assets.Tools.core.pipeline import Pipeline
 from Code.Agents.tenk_analyst.tenk_analyst.stages import (
     IdentifyStage, FetchStage, ChunkStage, RouteStage,
@@ -527,3 +363,12 @@ pipeline = Pipeline([
     QuantStage(...),
     SummarizeStage(),
 ])
+```
+
+## License
+
+[Add your license information here]
+
+## Contact
+
+[Add contact/support information here]

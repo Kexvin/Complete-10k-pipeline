@@ -34,33 +34,33 @@ The pipeline is artifact-based: each stage consumes and produces typed artifacts
 
 ```mermaid
 flowchart TD
-  subgraph Data_Sources[Data Sources]
-    SEC[SEC EDGAR\nsubmissions + companyfacts]
+  %% Data sources
+  subgraph DataSources["Data Sources"]
+    SEC["SEC EDGAR<br/>(submissions + companyfacts)"]
   end
 
   %% Base pipeline
-  SEC --> A[Identify Stage\n(find latest 10-K for CIK)]
-  A --> B[Fetch Stage\n(download 10-K HTML\n+ optional RAG index)]
-  B --> C[Chunk Stage\n(clean + extract Item 1A/7A/8)]
-  C --> D[Route Stage\n(label routed chunks)]
+  SEC --> A["Identify Stage<br/>(latest 10-K for CIK)"]
+  A --> B["Fetch Stage<br/>(download 10-K HTML + optional RAG index)"]
+  B --> C["Chunk Stage<br/>(extract Item 1A / 7A / 8)"]
+  C --> D["Route Stage<br/>(label routed chunks)"]
 
   %% Parallel analysis
-  D --> E[Qualitative Stage\nFinBERT tone + risk signals\n+ optional RAG retrieval]
-  D --> F[Quantitative Stage\nSEC companyfacts + ratios]
+  D --> E["Qualitative Stage<br/>(FinBERT tone + risk + RAG)"]
+  D --> F["Quantitative Stage<br/>(SEC companyfacts + ratios)"]
 
   %% RAG index
-  subgraph RAG[Pinecone Vector DB]
-    J[(knowledgepinecone)]
+  subgraph RAG["Pinecone Vector DB"]
+    J["knowledgepinecone index"]
   end
 
-  B -. index filing text .-> J
-  E -. embed query .-> J
-  J -. top-k similar .-> E
-  H -. index report summary .-> J
+  B -. "index filing text" .-> J
+  E -. "embed query" .-> J
+  J -. "top-k similar" .-> E
 
   %% Summarize
-  E --> G[Summarize Stage\ncombine qual + quant]
+  E --> G["Summarize Stage<br/>(combine qual + quant)"]
   F --> G
-  G --> H((SummaryArtifact\nreport JSON))
-
-  H --> I[Report file\nData/Outputs/reports]
+  G --> H["SummaryArtifact<br/>(structured report)"]
+  H --> I["Report file<br/>Data/Outputs/reports"]
+  H -. "index report summary" .-> J
