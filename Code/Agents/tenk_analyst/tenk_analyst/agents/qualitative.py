@@ -3,7 +3,7 @@ from ..models.core import Chunk
 from ..models.qualitative import QualResult, QualSignal
 from Code.Assets.Tools.nlp.finbert import FinBert
 from Code.Assets.Tools.rag.pinecone_client import RAG
-
+import re 
 
 class QualitativeAgent:
     """Analyzes narrative tone and risk mentions using FinBERT + RAG grounding."""
@@ -174,36 +174,61 @@ class QualitativeAgent:
             # --- Risk signal detection ----------------------------------------
             lowered = cleaned_text.lower()
             for keyword in risk_keywords:
-                if keyword in lowered:
-                    sentences = cleaned_text.split(". ")
-                    for sentence in sentences:
-                        if keyword in sentence.lower():
-                            # Compare with similar companies that mention the same keyword
-                            similar_risks = []
-                            for section in similar_sections:
-                                meta = getattr(section, "metadata", None) or {}
-                                sec_text = (meta.get("text") or "").lower()
-                                if keyword in sec_text:
-                                    similar_risks.append(
-                                        meta.get("company_name")
-                                        or meta.get("company")
-                                        or "Unknown"
-                                    )
+                if keyword not in lowered:
+                    continue
 
-                            context = ""
-                            if similar_risks:
-                                context = (
-                                    f" Similar concerns noted by: "
-                                    f"{', '.join(similar_risks[:3])}"
-                                )
+                # Better sentence splitting: split on ., ?, ! followed by space
+                sentences = re.split(r'(?<=[\.\?\!])\s+', cleaned_text)
 
-                            signals.append(
-                                QualSignal(
-                                    label="risk",
-                                    evidence=sentence.strip(),
-                                    context=context,
-                                )
+                for sentence in sentences:
+                    s = sentence.strip()
+                    if not s:
+                        continue
+
+                    if keyword not in s.lower():
+                        continue
+
+                    # Skip very short / heading-like lines (TOC, section titles)
+                    s_lower = s.lower()
+                    looks_like_toc = False
+
+                    # e.g. "Item 1A. Risk Factors 9 Item 1B."
+                    if s_lower.startswith("item ") and "risk factors" in s_lower:
+                        looks_like_toc = True
+                    # very short lines with "risk" are probably headings, not real risk text
+                    if len(s) < 40:
+                        looks_like_toc = True
+
+                    if looks_like_toc:
+                        continue
+
+                    # Compare with similar companies that mention the same keyword
+                    similar_risks = []
+                    for section in similar_sections:
+                        meta = getattr(section, "metadata", None) or {}
+                        sec_text = (meta.get("text") or "").lower()
+                        if keyword in sec_text:
+                            similar_risks.append(
+                                meta.get("company_name")
+                                or meta.get("company")
+                                or "Unknown"
                             )
+
+                    context = ""
+                    if similar_risks:
+                        context = (
+                            f" Similar concerns noted by: "
+                            f"{', '.join(similar_risks[:3])}"
+                        )
+
+                    signals.append(
+                        QualSignal(
+                            label="risk",
+                            evidence=s,
+                            context=context,
+                        )
+                    )
+
 
             # --- Tone signal (use cleaned text snippet as evidence) -----------
             tone_snippet = cleaned_text[:300]

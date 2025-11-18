@@ -115,13 +115,11 @@ def process_companies_from_sec(
                 ]
             )
 
-            # Shared RAG client
             # Shared RAG agent (wraps the RAG tool)
             rag_agent = RagAgent(collection=pinecone_collection)
 
             qual = Pipeline([QualStage(QualitativeAgent(FinBert(heavy=True), rag_agent))])
             quant = Pipeline([QuantStage(QuantitativeAgent())])
-
 
             # ① Seed artifact: we give it just the CIK; IdentifyStage will choose latest 10-K
             seed: RawTextArtifact = RawTextArtifact(
@@ -192,6 +190,57 @@ def process_companies_from_sec(
 
             report = final.report
 
+            # ── Merge & dedupe sources from report + artifacts ─────────────
+            combined_sources = []
+
+            # 1) Start with report-level sources (from SummarizerAgent), if any
+            if report and getattr(report, "sources", None):
+                for src in report.sources:
+                    # assume dict-like; normalize fields
+                    if isinstance(src, dict):
+                        combined_sources.append(
+                            {
+                                "type": src.get("type"),
+                                "name": src.get("name"),
+                                "url": src.get("url"),
+                                "version": src.get("version"),
+                                "retrieved_at": src.get("retrieved_at"),
+                                "notes": src.get("notes"),
+                            }
+                        )
+
+            # 2) Add artifact-level sources (Qual + Quant) if not already present
+            existing_keys = {
+                (s.get("type"), s.get("name"), s.get("url")) for s in combined_sources
+            }
+
+            for s in (final.sources or []):
+                # Dataclass DataSource → dict
+                if hasattr(s, "__dict__"):
+                    s_dict = {
+                        "type": getattr(s, "type", None),
+                        "name": getattr(s, "name", None),
+                        "url": getattr(s, "url", None),
+                        "version": getattr(s, "version", None),
+                        "retrieved_at": getattr(s, "retrieved_at", None),
+                        "notes": getattr(s, "notes", None),
+                    }
+                else:
+                    # already dict-like
+                    s_dict = {
+                        "type": s.get("type"),
+                        "name": s.get("name"),
+                        "url": s.get("url"),
+                        "version": s.get("version"),
+                        "retrieved_at": s.get("retrieved_at"),
+                        "notes": s.get("notes"),
+                    }
+
+                key = (s_dict.get("type"), s_dict.get("name"), s_dict.get("url"))
+                if key not in existing_keys:
+                    combined_sources.append(s_dict)
+                    existing_keys.add(key)
+
             report_data = {
                 "company_name": company_name,
                 "cik": cik,
@@ -225,17 +274,8 @@ def process_companies_from_sec(
                     }
                     for q in (report.qualitative_analysis if (report and report.qualitative_analysis) else [])
                 ],
-                "sources": [
-                    {
-                        "type": s.type,
-                        "name": s.name,
-                        "url": s.url,
-                        "version": s.version,
-                        "retrieved_at": s.retrieved_at,
-                        "notes": s.notes,
-                    }
-                    for s in final.sources
-                ],
+                # Use merged + deduped sources here
+                "sources": combined_sources,
                 "sic": sic,
                 "industry": industry,
             }

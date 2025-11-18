@@ -52,4 +52,4 @@ class SummarizeStage(Stage[tuple[QualResultsArtifact, QuantResultsArtifact], Sum
             accession=report.accession,
             report=report,
             sources=(qual_art.sources or []) + (quant_art.sources or []),
-        )
+)

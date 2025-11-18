@@ -245,29 +245,51 @@ class SummarizerAgent:
         Pull out a good one-line tone summary from the full LLM explanation.
 
         Heuristics:
-        - Prefer lines that explicitly talk about the tone (e.g. 'Overall tone', 'tone label').
-        - Otherwise, pick the first reasonably long sentence-like line.
-        - Fallback: join the first two non-empty lines.
+        - Prefer lines that explicitly describe the tone in a sentence
+          (e.g. 'The overall tone of the filing is ...').
+        - Skip section headings like '4. Tone & Overall Assessment'.
+        - Otherwise, fall back to the first reasonably long sentence-like line.
         """
         if not llm_text:
             return ""
 
+        # Non-empty trimmed lines
         lines = [ln.strip() for ln in llm_text.splitlines() if ln.strip()]
         if not lines:
             return ""
 
-        # 1) Look for an explicit tone summary line
+        def looks_like_heading(line: str) -> bool:
+            lower = line.lower()
+            # e.g. "4. Tone & Overall Assessment"
+            if lower.startswith(("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.")):
+                return True
+            # very short and title-ish
+            if len(line) < 30 and line.endswith(("Assessment", "Overview", "Tone")):
+                return True
+            return False
+
+        # 1) Look for a line that clearly describes the overall tone
         for ln in lines:
             lower = ln.lower()
-            if "overall tone" in lower or "tone label" in lower or "tone & overall" in lower:
+            if "overall tone" in lower and not looks_like_heading(ln):
+                # This should catch e.g. "The overall tone of the filing is labeled as neutral..."
                 return ln
 
-        # 2) Otherwise, pick the first reasonably long sentence-like line
+        # 2) Look for any non-heading line that includes 'tone' and looks like a sentence
         for ln in lines:
+            lower = ln.lower()
+            if "tone" in lower and not looks_like_heading(ln) and len(ln) >= 40:
+                if any(ch in ln for ch in ".!?"):
+                    return ln
+
+        # 3) Otherwise pick the first non-heading, reasonably long sentence-like line
+        for ln in lines:
+            if looks_like_heading(ln):
+                continue
             if len(ln) >= 40 and any(ch in ln for ch in ".!?"):
                 return ln
 
-        # 3) Fallbacks
+        # 4) Fallbacks
         if len(lines) == 1:
             return lines[0]
         return " ".join(lines[:2])
