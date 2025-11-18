@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 from Code.Assets.Tools.core.artifact import Artifact
 from Code.Agents.tenk_analyst.tenk_analyst.models.core import Chunk
 from .datasources import DataSource
+
 
 @dataclass
 class ChunksArtifact(Artifact):
@@ -12,5 +13,5 @@ class ChunksArtifact(Artifact):
     company_cik: str = ""
     accession: str = ""
     filing_type: str = ""
-    chunks: List[Chunk] = None
-    sources: List[DataSource] = None
+    chunks: List[Chunk] = field(default_factory=list)
+    sources: List[DataSource] = field(default_factory=list)

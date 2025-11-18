@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "registry_type": "agent_registry",
+    "compatible_protocols": ["a2a", "mcp"],
+    "description": "Agent registry for the 10-K Analyst system, describing qualitative, quantitative, retrieval, and summarization agents and their data streams."
+  },
+  "global_protocols": ["a2a", "mcp"],
+  "agents": [
+    {
+      "id": "rag-agent",
+      "name": "TenKRAGRetriever",
+      "description": "Retrieves relevant 10-K sections and prior analysis chunks from the Pinecone index.",
+      "capabilities": ["retrieval", "context extraction"],
+      "input_data_streams": {
+        "mandatory": ["text_query"],
+        "optional": ["company_filters", "section_filters"]
+      },
+      "output_data_streams": {
+        "mandatory": ["retrieved_chunks"],
+        "optional": ["source_references"]
+      }
+    },
+    {
+      "id": "qual-agent",
+      "name": "Qualitative10KAgent",
+      "description": "Uses FinBERT and retrieved 10-K text to extract qualitative risk and tone signals.",
+      "capabilities": ["sentiment analysis", "risk extraction", "qualitative summarization"],
+      "input_data_streams": {
+        "mandatory": ["item_1a_risk_factors_chunks"],
+        "optional": [
+          "item_7a_market_risk_chunks",
+          "item_8_financial_statements_chunks",
+          "retrieved_chunks"
+        ]
+      },
+      "output_data_streams": {
+        "mandatory": ["qualitative_signals"],
+        "optional": ["tone_labels", "risk_bullets", "explanations"]
+      }
+    },
+    {
+      "id": "quant-agent",
+      "name": "Quant10KAgent",
+      "description": "Reads Kaggle company facts and SEC numeric data to compute financial KPIs.",
+      "capabilities": ["feature extraction", "kpi computation"],
+      "input_data_streams": {
+        "mandatory": ["sec_numeric_facts"],
+        "optional": ["kaggle_company_facts"]
+      },
+      "output_data_streams": {
+          "mandatory": ["financial_kpis"],
+          "optional": ["raw_numeric_features"]
+      }
+    },
+    {
+      "id": "summarizer-agent",
+      "name": "TenKReportSummarizer",
+      "description": "Synthesizes qualitative signals and financial KPIs into a human-readable 10-K summary report.",
+      "capabilities": ["result aggregation", "answer generation"],
+      "input_data_streams": {
+        "mandatory": ["qualitative_signals", "financial_kpis"],
+        "optional": ["retrieved_chunks", "source_references"]
+      },
+      "output_data_streams": {
+        "mandatory": ["company_summary"],
+        "optional": ["bullet_risks", "bullet_opportunities"]
+      }
+    }
+  ]
+}

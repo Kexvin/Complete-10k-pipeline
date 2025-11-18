@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 from Code.Assets.Tools.core.artifact import Artifact
 from Code.Agents.tenk_analyst.tenk_analyst.models.summary import SummaryReport
 from .datasources import DataSource
+
 
 @dataclass
 class SummaryArtifact(Artifact):
@@ -11,5 +12,5 @@ class SummaryArtifact(Artifact):
 
     company_cik: Optional[str] = None
     accession: Optional[str] = None
-    report: SummaryReport = None
-    sources: List[DataSource] = None
+    report: Optional[SummaryReport] = None
+    sources: List[DataSource] = field(default_factory=list)

@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 from Code.Assets.Tools.core.artifact import Artifact
 from Code.Agents.tenk_analyst.tenk_analyst.models.core import RoutedChunk
 from .datasources import DataSource
+
 
 @dataclass
 class RoutedChunksArtifact(Artifact):
@@ -11,5 +12,5 @@ class RoutedChunksArtifact(Artifact):
 
     company_cik: str = ""
     accession: str = ""
-    routed: List[RoutedChunk] = None
-    sources: List[DataSource] = None
+    routed: List[RoutedChunk] = field(default_factory=list)
+    sources: List[DataSource] = field(default_factory=list)

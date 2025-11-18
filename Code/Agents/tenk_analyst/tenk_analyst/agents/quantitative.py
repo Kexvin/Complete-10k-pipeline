@@ -1,76 +1,74 @@
+# Code/Agents/tenk_analyst/tenk_analyst/agents/quantitative.py
+
 from typing import List, Optional
-from Code.Assets.Tools.finance.ratios import (
-    compute_debt_ratio,
-    compute_fcf,
-    compute_margin
-)
-from Code.Assets.Tools.io.kaggle_data import KaggleFinancialData
+
+from Code.Assets.Tools.io.sec_facts_client import SECCompanyFacts
 from Code.Agents.tenk_analyst.tenk_analyst.models.core import Chunk
 from Code.Agents.tenk_analyst.tenk_analyst.models.quantitative import QuantResult
 
 
 class QuantitativeAgent:
-    """Extracts financial metrics from Kaggle dataset and computes ratios."""
-    
-    def __init__(self, kaggle_csv_path: str = "Data/Primary/kaggle_facts/companyfacts.csv"):
-        self.kaggle_data = KaggleFinancialData(kaggle_csv_path)
+    """
+    Extracts quantitative metrics from SEC companyfacts API and computes ratios.
+
+    Inputs:
+        - chunks: not used directly here (metrics come from companyfacts)
+        - company_cik: used to query SEC companyfacts
+
+    Outputs:
+        - a single QuantResult with raw metrics and derived ratios
+    """
+
+    def __init__(self, sec_client: Optional[SECCompanyFacts] = None) -> None:
+        self.sec_client = sec_client or SECCompanyFacts()
 
     def run(self, chunks: List[Chunk], company_cik: str = None) -> List[QuantResult]:
-        """Extract financial metrics from Kaggle dataset for the company.
-        
-        Args:
-            chunks: List of chunks (not used since we get data from Kaggle)
-            company_cik: The CIK of the company to analyze
-            
-        Returns:
-            List with a single QuantResult containing all metrics
-        """
         if not company_cik:
-            # Try to extract CIK from chunk metadata if available
-            return [QuantResult(chunk_id="no_cik", metrics=[])]
-            
-        # Get latest financial metrics from Kaggle dataset
-        metrics_data = self.kaggle_data.get_latest_metrics(company_cik)
-        
-        if not metrics_data:
-            return [QuantResult(chunk_id=company_cik, metrics=["No financial data available"])]
-        
-        # Extract values
-        revenue = metrics_data.get('revenue')
-        net_income = metrics_data.get('net_income')
-        total_assets = metrics_data.get('total_assets')
-        total_liabilities = metrics_data.get('total_liabilities')
-        operating_cash_flow = metrics_data.get('operating_cash_flow')
-        capex = metrics_data.get('capex')
-        
-        # Build metrics list
-        metrics = []
-        if revenue:
-            metrics.append(f"Revenue: ${revenue:,.0f}")
-        if net_income:
-            metrics.append(f"Net Income: ${net_income:,.0f}")
-        if operating_cash_flow:
-            metrics.append(f"Operating Cash Flow: ${operating_cash_flow:,.0f}")
-        if capex:
-            metrics.append(f"Capital Expenditures: ${capex:,.0f}")
-        if total_assets:
-            metrics.append(f"Total Assets: ${total_assets:,.0f}")
-        if total_liabilities:
-            metrics.append(f"Total Liabilities: ${total_liabilities:,.0f}")
-            
-        # Compute derived metrics using ratios module
-        debt_ratio = None
-        if total_liabilities and total_assets and total_assets != 0:
+            return [
+                QuantResult(
+                    chunk_id="no_cik",
+                    metrics=["Missing CIK; no quantitative metrics extracted."],
+                )
+            ]
+
+        metrics_data = self.sec_client.get_latest_metrics(company_cik)
+
+        revenue = metrics_data.get("revenue")
+        net_income = metrics_data.get("net_income")
+        operating_cash_flow = metrics_data.get("operating_cash_flow")
+        capex = metrics_data.get("capex")
+        total_assets = metrics_data.get("total_assets")
+        total_liabilities = metrics_data.get("total_liabilities")
+
+        metrics: List[str] = []
+
+        def fmt_dollars(label: str, value: Optional[float]) -> None:
+            if value is not None:
+                metrics.append(f"{label}: ${value:,.0f}")
+            else:
+                metrics.append(f"{label}: N/A")
+
+        # Raw metrics
+        fmt_dollars("Revenue", revenue)
+        fmt_dollars("Net Income", net_income)
+        fmt_dollars("Operating Cash Flow", operating_cash_flow)
+        fmt_dollars("Capital Expenditures", capex)
+        fmt_dollars("Total Assets", total_assets)
+        fmt_dollars("Total Liabilities", total_liabilities)
+
+        # Derived metrics
+        debt_ratio: Optional[float] = None
+        if total_liabilities is not None and total_assets not in (None, 0):
             debt_ratio = total_liabilities / total_assets
             metrics.append(f"Debt Ratio: {debt_ratio:.2%}")
-            
-        fcf = None
-        if operating_cash_flow and capex:
-            fcf = operating_cash_flow - capex
-            metrics.append(f"Free Cash Flow: ${fcf:,.0f}")
-            
-        net_margin = None
-        if revenue and net_income and revenue != 0:
+
+        free_cash_flow: Optional[float] = None
+        if operating_cash_flow is not None and capex is not None:
+            free_cash_flow = operating_cash_flow - capex
+            metrics.append(f"Free Cash Flow: ${free_cash_flow:,.0f}")
+
+        net_margin: Optional[float] = None
+        if revenue not in (None, 0) and net_income is not None:
             net_margin = net_income / revenue
             metrics.append(f"Net Margin: {net_margin:.2%}")
 
@@ -78,15 +76,14 @@ class QuantitativeAgent:
             chunk_id=company_cik,
             metrics=metrics,
             debt_ratio=debt_ratio,
-            free_cash_flow=fcf,
+            free_cash_flow=free_cash_flow,
             net_margin=net_margin,
             revenue=revenue,
             net_income=net_income,
             operating_cash_flow=operating_cash_flow,
             capex=capex,
             total_assets=total_assets,
-            total_liabilities=total_liabilities
+            total_liabilities=total_liabilities,
         )
-        
-        return [result]
 
+        return [result]

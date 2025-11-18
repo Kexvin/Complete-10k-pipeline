@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 from Code.Assets.Tools.core.artifact import Artifact
 from .datasources import DataSource
+
 
 @dataclass
 class RawTextArtifact(Artifact):
@@ -13,4 +14,4 @@ class RawTextArtifact(Artifact):
     filing_period: Optional[str] = None
     filing_type: Optional[str] = None
     text: str = ""
-    sources: List[DataSource] = None
+    sources: List[DataSource] = field(default_factory=list)

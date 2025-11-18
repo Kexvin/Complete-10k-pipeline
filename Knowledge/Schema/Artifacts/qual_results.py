@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 from Code.Assets.Tools.core.artifact import Artifact
 from Code.Agents.tenk_analyst.tenk_analyst.models.qualitative import QualResult
 from .datasources import DataSource
+
 
 @dataclass
 class QualResultsArtifact(Artifact):
@@ -11,5 +12,5 @@ class QualResultsArtifact(Artifact):
 
     company_cik: str = ""
     accession: str = ""
-    results: List[QualResult] = None
-    sources: List[DataSource] = None
+    results: List[QualResult] = field(default_factory=list)
+    sources: List[DataSource] = field(default_factory=list)
