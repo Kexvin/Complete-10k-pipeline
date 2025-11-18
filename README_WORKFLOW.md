@@ -1,66 +1,124 @@
-# 10-K Form Analysis Agent
+# Complete 10-K SEC Analysis Pipeline (Agentic Workflow)
 
-A complete, SEC-only pipeline for analyzing 10-K filings using:
+A workflow-specific example of an **agentic 10-K analysis system** built on:
 
-- **SEC EDGAR APIs** for filings and company facts  
-- **FinBERT** for financial tone & qualitative signals  
-- **Pinecone-backed RAG** for comparative context across filings  
-- **LLM (optional)** for natural-language explanations  
+- **SEC EDGAR** (submissions + companyfacts) as the *only* data source  
+- **Agentic architecture**: qualitative, quantitative, RAG, and summarizer agents  
+- **RAG (Pinecone)** for cross-company, text-based retrieval  
+- **FinBERT + LLMs** for tone, risk, and natural-language explanations  
 
-All text and numeric data comes directly from the SEC. No Kaggle dependency.
+The pipeline starts from a list of CIKs, fetches the latest 10-K filings, analyzes them through specialized agents, and stores:
 
----
-
-## 🧠 High-Level Overview
-
-For each CIK you provide, the pipeline:
-
-1. **Finds the latest 10-K** for that CIK via SEC submissions.
-2. **Fetches the 10-K HTML**, cleans it, and optionally indexes it into Pinecone.
-3. **Chunks the filing** into key sections (Item 1A, 7A, 8) and paragraph-level segments.
-4. **Routes chunks** for qualitative and quantitative analysis.
-5. **Runs qualitative analysis** using FinBERT and (optionally) RAG retrieval.
-6. **Runs quantitative analysis** using SEC `companyfacts` data and financial ratios.
-7. **Builds a `SummaryArtifact`** and writes a JSON report to `Data/Outputs/reports/`.
-8. **Indexes a summary text into Pinecone** so future RAG queries can hit the report.
-
-The pipeline is artifact-based: each stage consumes and produces typed artifacts defined in `Knowledge/Schema/Artifacts`.
+- A **structured JSON-style report** per company  
+- **Vector embeddings** of filings, chunks, and reports in Pinecone for downstream RAG use  
 
 ---
 
-## 🔁 Pipeline Workflow
+## 🔎 High-Level Flow
 
-### Mermaid workflow diagram
+For each CIK you pass in:
+
+1. **Identify the latest 10-K** via the SEC submission API.  
+2. **Fetch the full 10-K HTML** and clean it.  
+3. **Chunk** out key sections (Item 1A, Item 7A, Item 8) into paragraph-level chunks.  
+4. **Route** chunks and metadata into the appropriate agents:
+   - `Qualitative10KAgent` (FinBERT + RAG + risk signals)
+   - `Quant10KAgent` (SEC companyfacts + ratios from `ratios.py`)
+5. **RagAgent** uses Pinecone to retrieve **similar sections** across previously-indexed filings.  
+6. **TenKReportSummarizer** merges qualitative + quantitative results into one `SummaryArtifact`.  
+7. The summary is **serialized to JSON** (saved as a `.txt` file) and also **indexed back into Pinecone** as a high-level summary vector.
+
+---
+
+## 🤖 Agents vs Stages
+
+This repo is intentionally **agentic**:
+
+### Agents (decision / reasoning units)
+
+Located in: `Code/Agents/tenk_analyst/tenk_analyst/agents/`
+
+- **`RagAgent`**
+  - Wraps `Code.Assets.Tools.rag.pinecone_client.RAG`
+  - API: `retrieve(text_query, top_k, company_filters, section_filters)`
+  - Used by qualitative analysis to find **similar chunks / filings**.
+  - Only operates on **text embeddings** (filing text, chunks, summaries) — it **does not** use numeric facts directly.
+
+- **`Qualitative10KAgent`**
+  - Consumes routed 10-K text chunks.
+  - Uses **FinBERT** (financial sentiment model) to get tone per chunk.
+  - Calls `RagAgent` to retrieve similar chunks from other companies.
+  - Emits **risk & tone signals** + similar-company context as `QualResultsArtifact`.
+
+- **`Quantitative10KAgent`**
+  - Reads numeric facts via `sec_facts_client.build_financials_from_sec_facts`.
+  - Computes **ratios and KPIs** using `Code.Assets.Tools.finance.ratios`.
+  - Produces `QuantResultsArtifact` with fields like revenue, net income, FCF, debt ratio, net margin, etc.
+  - **Does not call RAG** — all numeric logic is deterministic.
+
+- **`TenKReportSummarizer`**
+  - Takes both `QualResultsArtifact` and `QuantResultsArtifact`.
+  - Optionally uses OpenAI (if `OPENAI_API_KEY` set) for a narrative explanation.
+  - Produces a `SummaryArtifact` + serializable report dict.
+
+### Stages (data-flow orchestration)
+
+Located in: `Code/Agents/tenk_analyst/tenk_analyst/stages/`
+
+- `IdentifyStage` – Find latest 10-K accession for a CIK (from SEC submissions).  
+- `FetchStage` – Fetch & clean 10-K HTML; optional RAG indexing of raw text.  
+- `ChunkStage` – Extract Item 1A / 7A / 8, then create paragraph chunks.  
+- `RouteStage` – Build `RoutedChunksArtifact` that indicates which chunks go to which agents.  
+- `QualStage` – Wraps `Qualitative10KAgent`.  
+- `QuantStage` – Wraps `Quantitative10KAgent`.  
+- `SummarizeStage` – Wraps `TenKReportSummarizer`.  
+
+Each stage consumes and produces **artifacts** from `Knowledge/Schema/Artifacts`.
+
+---
+
+## 🧠 Agentic Workflow Diagram (with RAG Emphasis)
+
+> ✅ This diagram is GitHub-compatible Mermaid (no `\n` line breaks).
 
 ```mermaid
-flowchart TD
-  %% Data sources
-  subgraph DataSources["Data Sources"]
-    SEC["SEC EDGAR<br/>(submissions + companyfacts)"]
+flowchart LR
+  %% External sources
+  subgraph Sources["External Data Sources"]
+    SECSub["SEC EDGAR<br/>submissions API"]
+    SECFacts["SEC companyfacts<br/>(numeric facts)"]
   end
 
-  %% Base pipeline
-  SEC --> A["Identify Stage<br/>(latest 10-K for CIK)"]
-  A --> B["Fetch Stage<br/>(download 10-K HTML + optional RAG index)"]
-  B --> C["Chunk Stage<br/>(extract Item 1A / 7A / 8)"]
-  C --> D["Route Stage<br/>(label routed chunks)"]
+  %% Pipeline + agents
+  subgraph Pipeline["10-K SEC Analysis Pipeline (Agentic)"]
+    Seed["Seed Input<br/>CIK list"] --> ID["IdentifyStage<br/>(latest 10-K)"]
+    ID --> F["FetchStage<br/>(download & clean 10-K)"]
+    F --> C["ChunkStage<br/>(Item 1A / 7A / 8)"]
+    C --> R["RouteStage<br/>(build RoutedChunksArtifact)"]
 
-  %% Parallel analysis
-  D --> E["Qualitative Stage<br/>(FinBERT tone + risk + RAG)"]
-  D --> F["Quantitative Stage<br/>(SEC companyfacts + ratios)"]
+    R --> QQual["QualStage<br/>→ Qualitative10KAgent"]
+    R --> QQuant["QuantStage<br/>→ Quant10KAgent"]
 
-  %% RAG index
-  subgraph RAG["Pinecone Vector DB"]
-    J["knowledgepinecone index"]
+    QQual --> S["SummarizeStage<br/>→ TenKReportSummarizer"]
+    QQuant --> S
+    S --> Out["SummaryArtifact + JSON<br/>Data/Outputs/reports"]
   end
 
-  B -. "index filing text" .-> J
-  E -. "embed query" .-> J
-  J -. "top-k similar" .-> E
+  SECSub --> ID
+  SECSub --> F
+  SECFacts --> QQuant
 
-  %% Summarize
-  E --> G["Summarize Stage<br/>(combine qual + quant)"]
-  F --> G
-  G --> H["SummaryArtifact<br/>(structured report)"]
-  H --> I["Report file<br/>Data/Outputs/reports"]
-  H -. "index report summary" .-> J
+  %% RAG / vector DB
+  subgraph RAG["RAG Layer (Text-Only Retrieval)"]
+    RagAgentNode["RagAgent<br/>(wraps RAG client)"]
+    Pinecone["Pinecone index<br/>knowledgepinecone"]
+  end
+
+  %% Indexing paths (no numeric data)
+  F -. "index full 10-K text" .-> Pinecone
+  C -. "index section chunks" .-> Pinecone
+  Out -. "index textual summary" .-> Pinecone
+
+  %% Retrieval path (qualitative only)
+  QQual -. "similar chunks<br/>RagAgent.retrieve()" .-> RagAgentNode
+  RagAgentNode --> Pinecone
