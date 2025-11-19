@@ -4,7 +4,6 @@ from typing import Optional, Literal, Dict
 from Knowledge.Schema.Artifacts.datasources import (
     DataSource,
     sec_edgar_api_source,
-    kaggle_company_facts_source,
 )
 
 
@@ -46,16 +45,7 @@ class DataRegistry:
             )
         )
 
-        self._register(
-            DataAsset(
-                key="sec_company_facts",
-                kind="remote_api",
-                description="SEC company facts (XBRL) for financial metrics.",
-                source=kaggle_company_facts_source(
-                    notes="In SEC-only mode this is pulled directly from SEC facts API."
-                ),
-            )
-        )
+       
 
         # ── Local folders ────────────────────────────────────────────
         self._register(
