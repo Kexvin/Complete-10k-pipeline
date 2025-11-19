@@ -1,12 +1,23 @@
-
 # Core minimal dependencies (install these first)
 pydantic>=1.10.0
 transformers>=4.0.0
 requests>=2.25.0
-# numpy: pin to a pre-built release compatible with many platforms; install separately if build fails
 numpy>=1.26.4
 
+# Data & config
+pandas>=2.0.0
+python-dotenv>=1.0.0
+
+# LLM client (OpenAI)
+openai>=1.0.0
+
+# RAG stack (Pinecone + sentence embeddings)
+pinecone-client>=2.2.0
+sentence-transformers>=2.5.0
+
 # Optional / heavy packages (install manually per platform):
-# pinecone-client (RAG) and torch (PyTorch) are optional and may need platform-specific wheels:
-#   python -m pip install pinecone-client
+# PyTorch is required for FinBERT and sentence-transformers.
+# It often needs a platform-specific wheel:
 #   python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+# or follow instructions at https://pytorch.org/get-started/locally/
+# torch
